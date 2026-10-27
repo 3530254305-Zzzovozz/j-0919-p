@@ -324,14 +324,19 @@
   /* 内置清单 + 本机导入 → PHOTOS（原地替换，灯箱那边不用改） */
   function buildPhotoList() {
     var caps = loadCaps();
+    var sharedList = (window.Sync && window.Sync.sharedPhotos) ? window.Sync.sharedPhotos() : [];
+    var shared = sharedList.map(function (p) {
+      return { key: 'shr:' + p.id, id: p.id, src: p.url, caption: p.cap || '', date: p.date || '', mine: false, shared: true };
+    });
     var mine = loadMine().map(function (p) {
       return { key: 'imp:' + p.id, id: p.id, src: p.src, caption: p.caption || '', date: p.date || '', mine: true };
     });
     var lib = LIB_PHOTOS.map(function (p) {
       return { key: 'lib:' + p.src, src: p.src, caption: p.caption || '', date: p.date || '', mine: false };
     });
-    var all = mine.concat(lib);
+    var all = shared.concat(mine).concat(lib);
     all.forEach(function (p) {
+      if (p.shared) return;
       var o = caps[p.key];
       if (o) {
         if (typeof o.caption === 'string') p.caption = o.caption;
@@ -380,6 +385,10 @@
     });
   }
 
+  function dataUrlToBlob(src) {
+    return fetch(src).then(function (r) { return r.blob(); });
+  }
+
   /* 逐张处理，存储满了就停下来说一声 */
   function addPhotoFiles(files) {
     var list = Array.prototype.slice.call(files || []).filter(function (f) {
@@ -390,10 +399,16 @@
     if (!list.length) { toast('选的是图片才行（jpg / png / webp）'); return Promise.resolve(0); }
 
     var added = 0, full = false;
+    var useSync = !!(window.Sync && window.Sync.isOn && window.Sync.isOn());
     return list.reduce(function (chain, f) {
       return chain.then(function () {
         if (full) return;
         return shrinkImage(f).then(function (src) {
+          if (useSync) {
+            return dataUrlToBlob(src).then(function (blob) {
+              return window.Sync.addPhoto(blob, {}).then(function () { added++; });
+            });
+          }
           var next = [{ id: uid(), src: src, caption: '', date: '', ts: Date.now() }].concat(loadMine());
           if (!saveMine(next)) { full = true; return; }
           added++;
@@ -403,6 +418,7 @@
       renderWall();
       if (full) toast('浏览器存满了，先删几张再加');
       else if (!added) toast('这几张没读出来，换一张试试');
+      else if (useSync) toast('加了 ' + added + ' 张，两台手机都能看到');
       else toast('加了 ' + added + ' 张');
       return added;
     });
@@ -443,6 +459,16 @@
     if (!p) { endCapEdit(); return; }
     var caps = loadCaps();
     var cap = { caption: $('lbCapInput').value.trim(), date: $('lbCapDate').value.trim() };
+    if (p.shared) {
+      if (window.Sync && window.Sync.setPhotoMeta) window.Sync.setPhotoMeta(p.id, { cap: cap.caption, date: cap.date });
+      p.caption = cap.caption;
+      p.date = cap.date;
+      endCapEdit();
+      renderWall();
+      openLightbox(lbIndex);
+      toast('说明已保存，她那边也能看到');
+      return;
+    }
     if (cap.caption || cap.date) caps[p.key] = cap; else delete caps[p.key];
     if (!saveCaps(caps)) { toast('没存下，浏览器存储满了'); return; }
     p.caption = cap.caption;
@@ -529,6 +555,14 @@
         }
         resetDel();
         var p = PHOTOS[lbIndex];
+        if (p && p.shared && window.Sync && window.Sync.removePhoto) {
+          window.Sync.removePhoto(p.id).then(function () {
+            renderWall();
+            closeLightbox();
+            toast('删掉了，她那边也会消失');
+          });
+          return;
+        }
         if (p && p.id) deleteMinePhoto(p.id);
       });
     }
@@ -907,6 +941,7 @@
           if (window.__game && window.__game.applyStats) window.__game.applyStats(obj);
         }
       });
+      window.Sync.onShared(function () { renderWall(); });
     }
 
     var ok = $('noteSyncOk'), close = $('noteSyncClose');

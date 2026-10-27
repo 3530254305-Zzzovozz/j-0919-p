@@ -142,7 +142,7 @@
 
   function readRoom() {
     return gh('GET', 'rooms/' + room.id + '.json').then(function (res) {
-      if (!res || res.missing) return { notes: [], game: null, sha: null };
+      if (!res || res.missing) return { notes: [], game: null, photos: [], sha: null };
       var text = '';
       try { text = new TextDecoder().decode(unb64(String(res.content || '').replace(/\s/g, ''))); } catch (e) {}
       var box = null;
@@ -151,6 +151,7 @@
         return {
           notes: (payload && payload.notes) || [],
           game: (payload && payload.game) || null,
+          photos: (payload && payload.photos) || [],
           sha: res.sha || null
         };
       });
@@ -237,6 +238,7 @@
       var merged = merge(snapshot(), res.notes);
       hooks.setNotes(merged);
       if (hooks.setGame) hooks.setGame(mergeGame(gameSnapshot(), res.game));
+      if (key) applyPhotoMeta(mergePhotos(photoMeta, res.photos));
       state.at = Date.now();
       if (!quiet) setMsg('已拉取 ' + timeText());
       return true;
@@ -248,7 +250,7 @@
 
   function push(quiet) {
     if (!room || !key || !token) return Promise.resolve(false);
-    return writeRoom({ v: 1, notes: snapshot(), game: gameSnapshot(), at: Date.now() }, lastSha).then(function (sha) {
+    return writeRoom({ v: 1, notes: snapshot(), game: gameSnapshot(), photos: photoMeta, at: Date.now() }, lastSha).then(function (sha) {
       lastSha = sha;
       state.at = Date.now();
       if (!quiet) setMsg('已上传 ' + timeText());
@@ -510,6 +512,12 @@
     if (!supported() || !room) { state.on = false; paint(); return; }
     state.on = true;
     state.code = room.id + '-' + room.secret;
+    idbMetaAll().then(function (list) {
+      if (Array.isArray(list) && list.length) {
+        photoMeta = mergePhotos(photoMeta, list);
+        applyPhotoMeta(photoMeta);
+      }
+    });
     if (token) startRoom();
     paint();
 
@@ -521,6 +529,188 @@
     });
   }
 
+  /* ---------- 照片：加密后单独存文件（记录里只放清单） ---------- */
+  var PHOTO_INDEX = 'ourworld.shared.v1';
+  var photoMeta = [];        // [{id, cap, date, ts, del}]
+  var photoUrls = {};        // id -> blob URL
+  var photoCb = null;
+  var dbP = null;
+
+  function idb() {
+    if (dbP) return dbP;
+    dbP = new Promise(function (res, rej) {
+      if (!window.indexedDB) { rej(new Error('no idb')); return; }
+      var r = indexedDB.open('ourworld.photos', 1);
+      r.onupgradeneeded = function () {
+        var d = r.result;
+        if (!d.objectStoreNames.contains('blob')) d.createObjectStore('blob');
+        if (!d.objectStoreNames.contains('meta')) d.createObjectStore('meta', { keyPath: 'id' });
+      };
+      r.onsuccess = function () { res(r.result); };
+      r.onerror = function () { rej(r.error || new Error('idb')); };
+    });
+    return dbP;
+  }
+
+  function idbDo(store, mode, fn) {
+    return idb().then(function (d) {
+      return new Promise(function (res, rej) {
+        var tx = d.transaction(store, mode);
+        var req = fn(tx.objectStore(store));
+        tx.oncomplete = function () { res(req && req.result); };
+        tx.onerror = function () { rej(tx.error); };
+      });
+    }).catch(function () { return null; });
+  }
+
+  function idbMetaAll() { return idbDo('meta', 'readonly', function (s) { return s.getAll(); }); }
+  function idbMetaPut(m) { return idbDo('meta', 'readwrite', function (s) { return s.put(m); }); }
+  function idbBlobGet(id) { return idbDo('blob', 'readonly', function (s) { return s.get(id); }); }
+  function idbBlobPut(id, b) { return idbDo('blob', 'readwrite', function (s) { return s.put(b, id); }); }
+  function idbBlobDel(id) { return idbDo('blob', 'readwrite', function (s) { return s.delete(id); }); }
+
+  function bytesToB64(u8) {
+    var out = '';
+    for (var i = 0; i < u8.length; i += 0x8000) {
+      out += String.fromCharCode.apply(null, u8.subarray(i, i + 0x8000));
+    }
+    return btoa(out);
+  }
+
+  function photoPath(id) { return 'rooms/' + room.id + '/photos/' + id + '.bin'; }
+
+  function sealBytes(buf) {
+    var iv = crypto.getRandomValues(new Uint8Array(12));
+    return crypto.subtle.encrypt({ name: 'AES-GCM', iv: iv }, key, buf).then(function (ct) {
+      var all = new Uint8Array(12 + ct.byteLength);
+      all.set(iv, 0);
+      all.set(new Uint8Array(ct), 12);
+      return all;
+    });
+  }
+
+  function openBytes(u8) {
+    var iv = u8.slice(0, 12);
+    var body = u8.slice(12);
+    return crypto.subtle.decrypt({ name: 'AES-GCM', iv: iv }, key, body);
+  }
+
+  function uploadPhoto(id, blob) {
+    return blob.arrayBuffer().then(sealBytes).then(function (sealed) {
+      return gh('PUT', photoPath(id), {
+        message: 'photo',
+        content: bytesToB64(sealed),
+        branch: BRANCH
+      });
+    });
+  }
+
+  function downloadPhoto(id) {
+    return gh('GET', photoPath(id)).then(function (res) {
+      if (!res || res.missing || !res.content) return null;
+      return openBytes(unb64(String(res.content).replace(/\s/g, ''))).then(function (buf) {
+        return new Blob([buf], { type: 'image/jpeg' });
+      });
+    });
+  }
+
+  function notifyPhotos() {
+    var list = photoMeta.filter(function (m) { return !m.del && photoUrls[m.id]; }).map(function (m) {
+      return { id: m.id, url: photoUrls[m.id], cap: m.cap || '', date: m.date || '', ts: m.ts || 0 };
+    });
+    list.sort(function (a, b) { return (b.ts || 0) - (a.ts || 0); });
+    if (photoCb) { try { photoCb(list); } catch (e) {} }
+  }
+
+  function mergePhotos(local, remote) {
+    var map = {}, order = [];
+    (local || []).concat(remote || []).forEach(function (m) {
+      if (!m || !m.id) return;
+      var cur = map[m.id];
+      if (!cur) { map[m.id] = m; order.push(m.id); return; }
+      if ((m.ts || 0) > (cur.ts || 0)) map[m.id] = m;
+    });
+    return order.map(function (id) { return map[id]; });
+  }
+
+  function applyPhotoMeta(list) {
+    photoMeta = list || [];
+    return Promise.all(photoMeta.map(function (m) {
+      if (m.del) {
+        if (photoUrls[m.id]) { try { URL.revokeObjectURL(photoUrls[m.id]); } catch (e) {} delete photoUrls[m.id]; }
+        return idbBlobDel(m.id).then(function () { return idbMetaPut(m); });
+      }
+      return idbBlobGet(m.id).then(function (blob) {
+        if (blob) {
+          if (!photoUrls[m.id]) photoUrls[m.id] = URL.createObjectURL(blob);
+          return;
+        }
+        if (!room || !key) return;
+        return downloadPhoto(m.id).then(function (b) {
+          if (!b) return;
+          photoUrls[m.id] = URL.createObjectURL(b);
+          return idbBlobPut(m.id, b);
+        }).catch(function () {});
+      });
+    })).then(function () { notifyPhotos(); });
+  }
+
+  function addPhoto(blob, meta) {
+    if (!room || !key || !token) return Promise.reject(new Error('云同步没开'));
+    var id = 'p' + rnd(10);
+    var rec = { id: id, cap: (meta && meta.cap) || '', date: (meta && meta.date) || '', ts: Date.now() };
+    photoUrls[id] = URL.createObjectURL(blob);
+    photoMeta = photoMeta.concat([rec]);
+    idbBlobPut(id, blob);
+    idbMetaPut(rec);
+    notifyPhotos();
+    return uploadPhoto(id, blob).then(function () {
+      return idbMetaPut(rec);
+    }).then(function () {
+      schedulePush();
+      return rec;
+    }).catch(function (e) {
+      delete photoUrls[id];
+      photoMeta = photoMeta.filter(function (m) { return m.id !== id; });
+      notifyPhotos();
+      idbBlobDel(id);
+      throw e;
+    });
+  }
+
+  function removePhoto(id) {
+    var rec = null;
+    photoMeta = photoMeta.map(function (m) {
+      if (m.id === id) { rec = { id: id, cap: '', date: '', ts: Date.now(), del: true }; return rec; }
+      return m;
+    });
+    if (!rec) return Promise.resolve(false);
+    if (photoUrls[id]) { try { URL.revokeObjectURL(photoUrls[id]); } catch (e) {} delete photoUrls[id]; }
+    idbBlobDel(id);
+    idbMetaPut(rec);
+    notifyPhotos();
+    gh('GET', photoPath(id)).then(function (res) {
+      if (res && res.sha) {
+        return gh('DELETE', photoPath(id), { message: 'remove photo', sha: res.sha, branch: BRANCH });
+      }
+    }).catch(function () {});
+    schedulePush();
+    return Promise.resolve(true);
+  }
+
+  function setPhotoMeta(id, patch) {
+    var ts = Date.now();
+    photoMeta = photoMeta.map(function (m) {
+      if (m.id !== id) return m;
+      return { id: id, cap: patch.cap != null ? patch.cap : m.cap, date: patch.date != null ? patch.date : m.date, ts: ts };
+    });
+    var rec = null;
+    photoMeta.forEach(function (m) { if (m.id === id) rec = m; });
+    if (rec) idbMetaPut(rec);
+    notifyPhotos();
+    schedulePush();
+  }
+
   window.Sync = {
     init: init,
     pull: pull,
@@ -528,6 +718,14 @@
     syncNow: syncNow,
     touch: schedulePush,
     isOn: function () { return !!room && !!token; },
+    addPhoto: addPhoto,
+    removePhoto: removePhoto,
+    setPhotoMeta: setPhotoMeta,
+    onShared: function (cb) { photoCb = cb; notifyPhotos(); },
+    sharedPhotos: function () {
+      return photoMeta.filter(function (m) { return !m.del && photoUrls[m.id]; })
+        .map(function (m) { return { id: m.id, url: photoUrls[m.id], cap: m.cap || '', date: m.date || '', ts: m.ts || 0 }; });
+    },
     supported: supported
   };
 })();
