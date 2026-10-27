@@ -142,13 +142,17 @@
 
   function readRoom() {
     return gh('GET', 'rooms/' + room.id + '.json').then(function (res) {
-      if (!res || res.missing) return { notes: [], sha: null };
+      if (!res || res.missing) return { notes: [], game: null, sha: null };
       var text = '';
       try { text = new TextDecoder().decode(unb64(String(res.content || '').replace(/\s/g, ''))); } catch (e) {}
       var box = null;
       try { box = JSON.parse(text); } catch (e) {}
       return unseal(box).then(function (payload) {
-        return { notes: (payload && payload.notes) || [], sha: res.sha || null };
+        return {
+          notes: (payload && payload.notes) || [],
+          game: (payload && payload.game) || null,
+          sha: res.sha || null
+        };
       });
     });
   }
@@ -192,6 +196,39 @@
 
   function snapshot() { return (hooks.getNotes() || []).slice(); }
 
+  function gameSnapshot() {
+    try { return hooks.getGame ? hooks.getGame() : null; } catch (e) { return null; }
+  }
+
+  /* 比分怎么合：每个人取「最后改动的那一个」（ts 大的赢），这样清空比分也不会被对方的旧记录复活 */
+  function mergeGame(local, remote) {
+    if (!local && !remote) return null;
+    var a = local || {}, b = remote || {};
+    var out = {
+      best: { me: 0, her: 0 },
+      ts: { me: 0, her: 0 },
+      rounds: [],
+      resetTs: Math.max(a.resetTs || 0, b.resetTs || 0)
+    };
+    ['me', 'her'].forEach(function (k) {
+      var av = (a.best || {})[k] || 0, bv = (b.best || {})[k] || 0;
+      var at = (a.ts || {})[k] || 0, bt = (b.ts || {})[k] || 0;
+      if (bt > at) { out.best[k] = bv; out.ts[k] = bt; }
+      else { out.best[k] = av; out.ts[k] = at; }
+    });
+    var seen = {};
+    (a.rounds || []).concat(b.rounds || []).forEach(function (r) {
+      if (!r || !r.id) return;
+      if (out.resetTs && (r.ts || 0) < out.resetTs) return;
+      if (seen[r.id]) return;
+      seen[r.id] = 1;
+      out.rounds.push(r);
+    });
+    out.rounds.sort(function (x, y) { return (x.ts || 0) - (y.ts || 0); });
+    out.rounds = out.rounds.slice(-40);
+    return out;
+  }
+
   /* ---------- 动作 ---------- */
   function pull(quiet) {
     if (!room || !key || !token) return Promise.resolve(false);
@@ -199,6 +236,7 @@
       lastSha = res.sha;
       var merged = merge(snapshot(), res.notes);
       hooks.setNotes(merged);
+      if (hooks.setGame) hooks.setGame(mergeGame(gameSnapshot(), res.game));
       state.at = Date.now();
       if (!quiet) setMsg('已拉取 ' + timeText());
       return true;
@@ -210,7 +248,7 @@
 
   function push(quiet) {
     if (!room || !key || !token) return Promise.resolve(false);
-    return writeRoom({ v: 1, notes: snapshot(), at: Date.now() }, lastSha).then(function (sha) {
+    return writeRoom({ v: 1, notes: snapshot(), game: gameSnapshot(), at: Date.now() }, lastSha).then(function (sha) {
       lastSha = sha;
       state.at = Date.now();
       if (!quiet) setMsg('已上传 ' + timeText());

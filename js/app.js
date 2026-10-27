@@ -898,6 +898,13 @@
           notes = Array.isArray(arr) ? arr : notes;
           saveNotes();
           renderNotes();
+        },
+        // 小游戏比分也跟着同步：谁最后改的听谁的
+        getGame: function () {
+          return (window.__game && window.__game.getStats) ? window.__game.getStats() : null;
+        },
+        setGame: function (obj) {
+          if (window.__game && window.__game.applyStats) window.__game.applyStats(obj);
         }
       });
     }

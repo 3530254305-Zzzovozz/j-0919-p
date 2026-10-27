@@ -62,25 +62,37 @@
 
   var STATS_KEY = 'ourworld.game.v2';
   var OLD_BEST_KEY = 'ourworld.best';
-  var stats = { best: { me: 0, her: 0 }, rounds: [], last: 'me' };
+  /* best 是双方最高分；ts 记每个人最后一次改动的时间，云同步时靠它决定听谁的 */
+  var stats = { best: { me: 0, her: 0 }, ts: { me: 0, her: 0 }, rounds: [], last: 'me', resetTs: 0 };
   var player = 'me';            // 这一局谁玩
 
   /* ---------- 比分存取 ---------- */
+  function num(v) { return Math.max(0, parseInt(v, 10) || 0); }
+
+  function normalizeStats(raw) {
+    var s = raw && typeof raw === 'object' ? raw : {};
+    var best = s.best || {};
+    var ts = s.ts || {};
+    var rounds = Array.isArray(s.rounds) ? s.rounds.filter(function (r) {
+      return r && typeof r.score === 'number' && (r.by === 'me' || r.by === 'her');
+    }).map(function (r) {
+      var out = { by: r.by, score: num(r.score), ts: num(r.ts) };
+      out.id = r.id || (r.by + '-' + out.ts + '-' + out.score);
+      return out;
+    }).slice(-40) : [];
+    return {
+      best: { me: num(best.me), her: num(best.her) },
+      ts: { me: num(ts.me), her: num(ts.her) },
+      rounds: rounds,
+      last: s.last === 'her' ? 'her' : 'me',
+      resetTs: num(s.resetTs)
+    };
+  }
+
   function loadStats() {
     var s = null;
     try { s = JSON.parse(localStorage.getItem(STATS_KEY) || 'null'); } catch (e) { s = null; }
-    if (!s || typeof s !== 'object') s = {};
-    var best = s.best || {};
-    var out = {
-      best: {
-        me: Math.max(0, parseInt(best.me, 10) || 0),
-        her: Math.max(0, parseInt(best.her, 10) || 0)
-      },
-      rounds: Array.isArray(s.rounds) ? s.rounds.filter(function (r) {
-        return r && typeof r.score === 'number' && (r.by === 'me' || r.by === 'her');
-      }).slice(-40) : [],
-      last: s.last === 'her' ? 'her' : 'me'
-    };
+    var out = normalizeStats(s);
     // 老版本只存了一个「最高纪录」，迁移成你的分数
     if (!out.best.me && !out.best.her) {
       try {
@@ -581,10 +593,11 @@
 
     // 记这一局：分是谁的、多少分、什么时候
     var who = player;
+    var now = Date.now();
     var isNew = score > stats.best[who];
-    stats.rounds.push({ by: who, score: score, ts: Date.now() });
+    stats.rounds.push({ id: who + '-' + now + '-' + score, by: who, score: score, ts: now });
     if (stats.rounds.length > 40) stats.rounds = stats.rounds.slice(-40);
-    if (isNew) stats.best[who] = score;
+    if (isNew) { stats.best[who] = score; stats.ts[who] = now; }
     var next = who === 'me' ? 'her' : 'me';
     stats.last = next;                    // 下一局自动轮到另一个人
     saveStats();
@@ -687,7 +700,8 @@
         return;
       }
       resetArmed = 0;
-      stats = { best: { me: 0, her: 0 }, rounds: [], last: player };
+      var t = Date.now();
+      stats = { best: { me: 0, her: 0 }, ts: { me: t, her: t }, rounds: [], last: player, resetTs: t };
       saveStats();
       scoreReset.classList.remove('is-armed');
       scoreReset.textContent = '清空比分';
@@ -716,6 +730,19 @@
   window.__game = {
     resize: resize,
     pause: pause,
+    /* 给云同步用：拿走一份比分 / 接收对方的比分 / 改完重画 */
+    getStats: function () { return JSON.parse(JSON.stringify(stats)); },
+    applyStats: function (obj) {
+      var merged = normalizeStats(obj);
+      merged.last = stats.last;                 // 「轮到谁」是各自手机的，不跟着同步
+      stats = merged;
+      saveStats();
+      renderScore();
+      overlayBest.textContent = stats.best.me || stats.best.her
+        ? NAMES.me + ' ' + stats.best.me + ' : ' + stats.best.her + ' ' + NAMES.her
+        : '两个人轮流来，谁的分高谁赢';
+      return stats;
+    },
     peek: function () {
       return {
         state: state,
