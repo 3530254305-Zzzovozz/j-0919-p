@@ -1,0 +1,262 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="theme-color" content="#0b0715">
+<meta name="robots" content="noindex, nofollow, noarchive, nosnippet">
+<title>我们的小世界</title>
+<meta name="description" content="一点照片，一点心事，和一个小游戏。">
+<meta property="og:title" content="我们的小世界">
+<meta property="og:description" content="一点照片，一点心事，和一个小游戏。">
+<meta property="og:type" content="website">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ctext y='26' font-size='26'%3E%F0%9F%92%97%3C/text%3E%3C/svg%3E">
+<link rel="stylesheet" href="./css/style.css">
+</head>
+<body class="is-gate">
+
+<canvas id="stars" aria-hidden="true"></canvas>
+<div class="glow glow-a" aria-hidden="true"></div>
+<div class="glow glow-b" aria-hidden="true"></div>
+
+<header class="topbar">
+  <a class="brand" href="#" id="brandLink">
+    <span class="brand-dot"></span>
+    <span id="brandName">我们的小世界</span>
+  </a>
+  <button class="music-btn" id="musicBtn" type="button" aria-label="播放背景音乐" aria-pressed="false">
+    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 18V6l10-2v12" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/><circle cx="6.5" cy="18" r="2.5" fill="currentColor"/><circle cx="16.5" cy="16" r="2.5" fill="currentColor"/></svg>
+    <span class="bars" aria-hidden="true"><i></i><i></i><i></i></span>
+  </button>
+</header>
+
+<!-- ================= 第一层：封面 ================= -->
+<section class="gate" id="gate">
+  <p class="eyebrow">OUR LITTLE UNIVERSE</p>
+
+  <h1 class="names"><span id="herName">她</span><em>&amp;</em><span id="meName">你</span></h1>
+  <p class="tagline" id="tagline">从某一天起</p>
+
+  <div class="clock" role="group" aria-label="认识的时间">
+    <p class="clock-cap" id="clockCap">已经认识</p>
+    <div class="clock-main">
+      <b id="days">000</b><span>天</span>
+    </div>
+    <div class="clock-sub">
+      <span class="unit"><i id="hh">00</i><small>时</small></span>
+      <span class="colon">:</span>
+      <span class="unit"><i id="mm">00</i><small>分</small></span>
+      <span class="colon">:</span>
+      <span class="unit"><i id="ss">00</i><small>秒</small></span>
+    </div>
+  </div>
+
+  <div class="anniv">
+    <div class="anniv-row">
+      <span id="annivLabel">距离认识第 100 天</span>
+      <b><span id="annivDays">0</span> 天</b>
+    </div>
+    <div class="anniv-bar"><i id="annivFill"></i></div>
+    <p class="anniv-note" id="annivNote">下一个里程碑</p>
+  </div>
+
+  <button class="enter-btn" id="enterBtn" type="button">
+    <span>进去看看</span>
+    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+  </button>
+  <p class="gate-hint" id="gateHint">里面还有 4 页，慢慢看</p>
+</section>
+
+<!-- ================= 第二层：四个章节 ================= -->
+<div class="chapters" id="chapters" hidden>
+
+  <nav class="dots" id="dots" aria-label="章节导航"></nav>
+
+  <!-- 01 照片 -->
+  <section class="chapter" data-ch="0" aria-labelledby="chTitle0">
+    <header class="ch-head">
+      <span class="ch-index">01 / 03</span>
+      <h2 id="chTitle0">我们的照片</h2>
+      <p>每一张，都是被时间盖过章的证据</p>
+    </header>
+    <p class="demo-notice" id="demoNotice">
+      现在墙上放的是示例图 —— 把 <code>photos/</code> 里的图片换成你们的照片，再改一下 <code>js/photos.js</code> 里的文字就行。
+    </p>
+    <div class="wall-bar">
+      <p class="wall-count" id="photoCount">照片</p>
+      <div class="wall-acts">
+        <button class="wall-btn" id="photoAdd" type="button"><span>＋</span>加照片</button>
+        <button class="wall-btn is-ghost" id="photoClear" type="button">清掉我加的</button>
+      </div>
+      <input class="sr-only" id="photoFile" type="file" accept="image/*" multiple tabindex="-1" aria-hidden="true">
+    </div>
+    <div class="wall" id="wall"></div>
+  </section>
+
+  <!-- 02 想对你说的话 -->
+  <section class="chapter chapter--notes" data-ch="1" aria-labelledby="chTitle1">
+    <header class="ch-head">
+      <span class="ch-index">02 / 03</span>
+      <h2 id="chTitle1">想对你说的话</h2>
+      <p>一句一句写下来，两个人都能改</p>
+    </header>
+
+    <form class="note-form" id="noteForm" autocomplete="off">
+      <label class="sr-only" for="noteText">要记录的内容</label>
+      <textarea id="noteText" rows="2" maxlength="600" placeholder="想对你说的话，写一句…"></textarea>
+      <div class="note-form-row">
+        <label class="note-date">
+          <span>时间</span>
+          <input type="datetime-local" id="noteDate" step="60">
+        </label>
+        <div class="note-who" role="group" aria-label="谁写的">
+          <button type="button" class="who-btn is-on" data-by="me" id="whoMe">我</button>
+          <button type="button" class="who-btn" data-by="her" id="whoHer">她</button>
+        </div>
+        <button class="btn note-add" type="submit" id="noteAdd">记下来</button>
+      </div>
+    </form>
+
+    <div class="note-tools">
+      <span id="noteCount">共 0 条</span>
+      <div class="note-tools-btns">
+        <button type="button" class="tool-btn" id="noteExport">导出</button>
+        <button type="button" class="tool-btn" id="noteImport">导入</button>
+      </div>
+    </div>
+
+    <div class="sync-box" id="syncBox"></div>
+
+    <div class="note-sync" id="noteSync" hidden>
+      <p class="note-sync-title" id="noteSyncTitle">导出</p>
+      <textarea id="noteSyncText" rows="5" spellcheck="false"></textarea>
+      <div class="note-sync-row">
+        <button type="button" class="btn" id="noteSyncOk">复制</button>
+        <button type="button" class="btn btn-ghost" id="noteSyncClose">关闭</button>
+      </div>
+      <p class="note-hint" id="noteSyncHint"></p>
+    </div>
+
+    <div class="notes" id="notes"></div>
+    <p class="note-empty" id="noteEmpty">还没写。想说什么就先写一句，反正随时能改。</p>
+    <p class="note-tip">记录存在这台设备的浏览器里。换手机时用上面的「导出 / 导入」搬过去。</p>
+  </section>
+
+  <!-- 03 游戏 -->
+  <section class="chapter chapter--game" data-ch="2" aria-labelledby="chTitle2">
+    <header class="ch-head">
+      <span class="ch-index">03 / 03</span>
+      <h2 id="chTitle2">接住我的爱</h2>
+      <p>30 秒一局，两个人轮流来，分数记在右边的比分板上</p>
+    </header>
+
+    <div class="game-layout">
+      <div class="game-wrap">
+        <div class="game-hud">
+          <div class="hud-item"><small>得分</small><b id="gameScore">0</b></div>
+          <div class="hud-item"><small>连击</small><b id="gameCombo">0</b></div>
+          <div class="hud-item"><small>剩余</small><b><span id="gameTime">30</span>s</b></div>
+          <div class="hud-item hud-life"><small>生命</small><b id="gameLives">♥♥♥</b></div>
+        </div>
+
+        <div class="game-stage">
+          <canvas id="gameCanvas" aria-label="接爱心小游戏"></canvas>
+          <span class="speed-badge" id="speedBadge" aria-hidden="true">速度 x1.0</span>
+          <div class="game-overlay" id="gameOverlay">
+            <div class="overlay-inner">
+              <p class="overlay-kicker" id="overlayKicker">READY?</p>
+              <h3 id="overlayTitle">准备好接住我的心了吗</h3>
+              <p id="overlayText">拖动小篮子接住爱心，躲开黑心。<br>金心 <b>+3</b>，连击越多，一颗心越值钱。</p>
+              <div class="player-pick" id="playerPick" role="group" aria-label="这一局谁玩">
+                <button type="button" class="player-btn is-on" data-by="me" id="pickMe">我</button>
+                <button type="button" class="player-btn" data-by="her" id="pickHer">她</button>
+              </div>
+              <button class="btn" id="gameStart" type="button">开始</button>
+              <p class="overlay-best" id="overlayBest"></p>
+            </div>
+          </div>
+        </div>
+
+      </div>
+
+      <aside class="score-panel" aria-labelledby="scoreTitle">
+        <h3 class="score-title" id="scoreTitle">比分板</h3>
+        <div class="score-vs">
+          <div class="score-side is-turn" data-by="me" id="sideMe">
+            <span class="score-name" id="sideMeName">我</span>
+            <b class="score-best" id="scoreMe">0</b>
+            <small>最高分</small>
+            <i class="score-rounds" id="roundsMe">0 局</i>
+          </div>
+          <span class="score-mid">VS</span>
+          <div class="score-side" data-by="her" id="sideHer">
+            <span class="score-name" id="sideHerName">她</span>
+            <b class="score-best" id="scoreHer">0</b>
+            <small>最高分</small>
+            <i class="score-rounds" id="roundsHer">0 局</i>
+          </div>
+        </div>
+        <p class="score-lead" id="scoreLead">都还没开打</p>
+        <div class="score-recent-wrap">
+          <p class="score-sub">最近几局</p>
+          <ol class="score-recent" id="scoreRecent"></ol>
+        </div>
+        <ul class="score-legend">
+          <li><i class="lg lg-heart"></i>爱心 +1，连击 5 颗以上算 2 分</li>
+          <li><i class="lg lg-gold"></i>金心 +3，落得稍快</li>
+          <li><i class="lg lg-bomb"></i>黑心 −1 条命，连击清零</li>
+        </ul>
+        <button class="score-reset" id="scoreReset" type="button">清空比分</button>
+      </aside>
+    </div>
+  </section>
+
+    <!-- 底部导航 -->
+  <nav class="pager" id="pager" aria-label="翻页">
+    <button class="pager-btn" id="prevBtn" type="button" aria-label="上一页">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 6l-6 6 6 6" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      <span>上一页</span>
+    </button>
+    <span class="pager-now"><b id="pageNow">01</b> <i>/</i> <span>03</span></span>
+    <button class="pager-btn pager-next" id="nextBtn" type="button" aria-label="下一页">
+      <span>下一页</span>
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 6l6 6-6 6" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    </button>
+  </nav>
+</div>
+
+<!-- ============ 灯箱 ============ -->
+<div class="lightbox" id="lightbox" role="dialog" aria-modal="true" aria-label="照片预览" hidden>
+  <button class="lb-close" id="lbClose" type="button" aria-label="关闭">✕</button>
+  <button class="lb-nav lb-prev" id="lbPrev" type="button" aria-label="上一张">‹</button>
+  <button class="lb-nav lb-next" id="lbNext" type="button" aria-label="下一张">›</button>
+  <figure class="lb-figure">
+    <img id="lbImg" alt="">
+    <figcaption>
+      <span id="lbCaption"></span>
+      <small id="lbMeta"></small>
+    </figcaption>
+    <div class="lb-acts">
+      <button class="lb-act" id="lbEditCap" type="button">✎ 写说明</button>
+      <button class="lb-act is-del" id="lbDel" type="button">删除这张</button>
+    </div>
+    <form class="lb-cap-form" id="lbCapForm" hidden>
+      <input id="lbCapInput" type="text" maxlength="80" placeholder="给这张照片写一句话…" aria-label="照片说明">
+      <input id="lbCapDate" type="text" maxlength="10" placeholder="日期 2026.10.01" aria-label="照片日期">
+      <button class="lb-cap-ok" type="submit">保存</button>
+      <button class="lb-cap-no" type="button" id="lbCapCancel">取消</button>
+    </form>
+  </figure>
+</div>
+
+<audio id="bgm" src="./bgm.mp3" loop preload="none"></audio>
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+<script src="./js/config.js"></script>
+<script src="./js/photos.js"></script>
+<script src="./js/sync.js"></script>
+<script src="./js/lock.js"></script>
+  <script src="./js/app.js"></script>
+<script src="./js/game.js"></script>
+</body>
+</html>
